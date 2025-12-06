@@ -1,18 +1,12 @@
-rm -rf build/
-mkdir build
+# rm -rf build/
+# mkdir build
 
-# Configure and build with /usr/local as the install prefix
-# This will install tlfloat to /usr/local during the build process
-cmake -DSLEEF_BUILD_QUAD=ON -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
-
-# Build with sudo so ext_tlfloat can install to /usr/local during build
-sudo cmake --build build -j --clean-first
-
-# Install sleef libraries to /usr/local
-sudo cmake --install build
+# cmake -DSLEEF_BUILD_QUAD=ON -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+# sudo cmake --build build -j --clean-first
+# sudo cmake --install build
 
 # Uncomment to uninstall:
-# sudo xargs rm -v < build/install_manifest.txt
+sudo xargs rm -v < build/install_manifest.txt
 
 # rm -rf build
 
