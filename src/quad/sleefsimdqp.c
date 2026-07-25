@@ -2601,11 +2601,43 @@ EXPORT CONST vargquad xcast_from_doubleq(vdouble d) {
 }
 
 EXPORT CONST vdouble xcast_to_doubleq(vargquad q) {
-  tdx t = cast_tdx_vq(cast_vq_aq(q));
-  t = tdxsetx_tdx_tdx_vd(t, vadd_vd_vd_vd(vadd_vd_vd_vd(tdxgetd3z_vd_tdx(t), tdxgetd3y_vd_tdx(t)), tdxgetd3x_vd_tdx(t)));
-  t = tdxsety_tdx_tdx_vd(t, vcast_vd_d(0));
-  t = tdxsetz_tdx_tdx_vd(t, vcast_vd_d(0));
-  return cast_vd_tdx(t);
+  vquad f = cast_vq_aq(q);
+  vmask low = vqgetx_vm_vq(f), high = vqgety_vm_vq(f);
+  vmask e = vand_vm_vm_vm(vsrl64_vm_vm_i(high, 48), vcast_vm_i64(0x7fff));
+  vmask sign = vand_vm_vm_vm(high, vcast_vm_u64(UINT64_C(0x8000000000000000)));
+  vmask fraction = vor_vm_vm_vm(vsll64_vm_vm_i(vand_vm_vm_vm(high, vcast_vm_u64(UINT64_C(0xffffffffffff))), 4),
+                                 vsrl64_vm_vm_i(low, 60));
+  vmask remainder = vand_vm_vm_vm(low, vcast_vm_u64(UINT64_C(0x0fffffffffffffff)));
+  vopmask roundUp = vor_vo_vo_vo(vgt64_vo_vm_vm(remainder, vcast_vm_u64(UINT64_C(0x0800000000000000))),
+                                  vand_vo_vo_vo(veq64_vo_vm_vm(remainder, vcast_vm_u64(UINT64_C(0x0800000000000000))),
+                                                vnot_vo64_vo64(veq64_vo_vm_vm(vand_vm_vm_vm(fraction, vcast_vm_i64(1)), vcast_vm_i64(0)))));
+  vmask normalBits = vor_vm_vm_vm(sign, vsll64_vm_vm_i(vsub64_vm_vm_vm(e, vcast_vm_i64(16383 - 1023)), 52));
+  normalBits = vadd64_vm_vm_vm(vor_vm_vm_vm(normalBits, fraction), vand_vm_vo64_vm(roundUp, vcast_vm_i64(1)));
+  vdouble result = vreinterpret_vd_vm(normalBits);
+
+  vopmask subnormal = vlt64_vo_vm_vm(e, vcast_vm_i64(16383 - 1022));
+  if (UNLIKELY(!vtestallzeros_i_vo64(subnormal))) {
+    tdx t = cast_tdx_vq(f);
+    tdx scaled = abs_tdx_tdx(tdxsete_tdx_tdx_vm(t, vadd64_vm_vm_vm(tdxgete_vm_tdx(t), vcast_vm_i64(1074))));
+    tdx integer;
+    tdx fractionPart = modf_tdx_tdx_ptdx(scaled, &integer);
+    vmask comparedToHalf = cmp_vm_tdx_tdx(fractionPart, cast_tdx_d(0.5));
+    vopmask roundSubnormalUp = vor_vo_vo_vo(vgt64_vo_vm_vm(comparedToHalf, vcast_vm_i64(0)),
+                                             vand_vo_vo_vo(veq64_vo_vm_vm(comparedToHalf, vcast_vm_i64(0)), isodd_vo_tdx(integer)));
+    integer = add_tdx_tdx_tdx(integer, sel_tdx_vo_tdx_tdx(roundSubnormalUp, cast_tdx_d(1), cast_tdx_d(0)));
+    vdouble subnormalResult = vmulsign_vd_vd_vd(vldexp2_vd_vd_vm(cast_vd_tdx(integer), vcast_vm_i64(-1074)),
+                                                 tdxgetd3x_vd_tdx(t));
+    result = vsel_vd_vo_vd_vd(subnormal, subnormalResult, result);
+  }
+
+  result = vsel_vd_vo_vd_vd(vgt64_vo_vm_vm(e, vcast_vm_i64(16383 + 1023)),
+                             vreinterpret_vd_vm(vor_vm_vm_vm(sign, vcast_vm_u64(UINT64_C(0x7ff0000000000000)))), result);
+
+  vopmask nonfinite = veq64_vo_vm_vm(e, vcast_vm_i64(0x7fff));
+  vopmask nan = vand_vo_vo_vo(nonfinite, vnot_vo64_vo64(veq64_vo_vm_vm(vor_vm_vm_vm(vand_vm_vm_vm(high, vcast_vm_u64(UINT64_C(0xffffffffffff))), low), vcast_vm_i64(0))));
+  vmask nonfiniteBits = vor_vm_vm_vm(vor_vm_vm_vm(sign, vcast_vm_u64(UINT64_C(0x7ff0000000000000))),
+                                     vand_vm_vo64_vm(nan, vcast_vm_u64(UINT64_C(0x0008000000000000))));
+  return vsel_vd_vo_vd_vd(nonfinite, vreinterpret_vd_vm(nonfiniteBits), result);
 }
 
 EXPORT CONST vint64 xcast_to_int64q(vargquad q) {
