@@ -13,6 +13,7 @@
 #include <cfloat>
 #include <climits>
 #include <cassert>
+#include <cstring>
 
 #include "misc.h"
 #include "qtesterutil.h"
@@ -1128,6 +1129,50 @@ int main2(int argc, char **argv) {
 
   {
     printf("cast_to_doubleq : ");
+
+    struct {
+      uint64_t high, low, expected;
+    } cases[] = {
+      { UINT64_C(0x3fff000000000000), UINT64_C(0x07ffffffffffffff), UINT64_C(0x3ff0000000000000) },
+      { UINT64_C(0x3fff000000000000), UINT64_C(0x0800000000000000), UINT64_C(0x3ff0000000000000) },
+      { UINT64_C(0x3fff000000000000), UINT64_C(0x0800000000000001), UINT64_C(0x3ff0000000000001) },
+      { UINT64_C(0xbfff000000000000), UINT64_C(0x0800000000000001), UINT64_C(0xbff0000000000001) },
+      { UINT64_C(0x3bcbffffffffffff), UINT64_C(0xffffffffffffffff), UINT64_C(0x0000000000000000) },
+      { UINT64_C(0x3bcc000000000000), UINT64_C(0x0000000000000000), UINT64_C(0x0000000000000000) },
+      { UINT64_C(0x3bcc000000000000), UINT64_C(0x0000000000000001), UINT64_C(0x0000000000000001) },
+      { UINT64_C(0xbbcc000000000000), UINT64_C(0x0000000000000000), UINT64_C(0x8000000000000000) },
+      { UINT64_C(0xbbcc000000000000), UINT64_C(0x0000000000000001), UINT64_C(0x8000000000000001) },
+      { UINT64_C(0x43feffffffffffff), UINT64_C(0xf7ffffffffffffff), UINT64_C(0x7fefffffffffffff) },
+      { UINT64_C(0x43feffffffffffff), UINT64_C(0xf800000000000000), UINT64_C(0x7ff0000000000000) },
+      { UINT64_C(0x43feffffffffffff), UINT64_C(0xf800000000000001), UINT64_C(0x7ff0000000000000) },
+    };
+
+    for(auto c : cases) {
+      Sleef_quad a;
+      uint64_t words[2];
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+      words[0] = c.high; words[1] = c.low;
+#else
+      words[0] = c.low; words[1] = c.high;
+#endif
+      memcpy(&a, words, sizeof(a));
+
+      int idx = xrand() % VECTLENDP;
+      VARGQUAD v0;
+      memrand(&v0, SIZEOF_VARGQUAD);
+      v0 = xsetq(v0, idx, a);
+      vdouble vd = xcast_to_doubleq(v0);
+      double s[VECTLENDP];
+      vstoreu_v_p_vd(s, vd);
+      uint64_t actual;
+      memcpy(&actual, &s[idx], sizeof(actual));
+      if (actual != c.expected) {
+        tlfloat_printf("arg0 = %Qa, t = %a, expected bits = %016llx\n",
+                       a, s[idx], (unsigned long long)c.expected);
+        success = false;
+        break;
+      }
+    }
 
     xsrand(1);
     Sleef_quad min = (Sleef_quad)tlfloat_strtoq("0", nullptr), max = (Sleef_quad)tlfloat_strtoq("1e+20", nullptr);
